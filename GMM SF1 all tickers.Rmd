@@ -1,0 +1,159 @@
+---
+title: "GMM SF1 all tickers"
+author: "Robert Thomson"
+date: "2026-07-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# GMM on the 1561 observation SF1
+
+Load Packages
+```{r}
+library(tidyverse)
+library(mclust)
+library(pheatmap)
+```
+
+## Getting the data in, in a way so i dont have to run my data script everytime I change something
+
+```{r}
+source("C:\\Users\\Robert\\OneDrive\\Documents\\R Working Directory\\STAT 4051\\Project\\US_equity_data_v4.R")
+source("C:\\Users\\Robert\\OneDrive\\Documents\\R Working Directory\\STAT 4051\\Project\\Non_ML_Report_vizs.R")
+```
+
+The actual stuff I will cluster
+```{r}
+SF1_32feat <- SF1_tibble
+```
+The actual stuff I will cluster with sector and industry
+```{r}
+SF1_32feat_wLabels <- SF1_tibble_w_labels
+```
+
+Checking pairwise feature correlations
+```{r}
+SF1_32feat_corr <- cor(SF1_32feat)
+SF1_32feat_corr <- as_tibble(SF1_32feat_corr)
+which( 1 > abs(SF1_32feat_corr) & abs(SF1_32feat_corr) >= .9, arr.ind = T)
+```
+Going to keep bvps(4) and rel_rnd(25) and drop the rest
+
+```{r}
+SF1_27feat <- SF1_32feat %>% select(-roe, -fcfps, -netmargin, -ps, -ebitdamargin)
+```
+
+Rechecking correlations
+```{r}
+SF1_27feat_corr <- cor(SF1_27feat)
+which(1 > SF1_27feat_corr & SF1_27feat_corr > .9, arr.ind = T)
+which(1 > SF1_27feat_corr & SF1_27feat_corr > .85, arr.ind = T)
+which(1 > SF1_27feat_corr & SF1_27feat_corr > .8, arr.ind = T)
+```
+removing rel_sgna(25)
+```{r}
+SF1_26feat <- SF1_27feat %>% select(-rel_sgna)
+```
+
+Removing marketcap, pb, pe, evebitda, and divyield because they incorporate market prices for the company and I want this to be just financial statement stuff (we have other data for market price stuff)
+```{r}
+SF1_21feat <- SF1_26feat %>% select(-marketcap, -pb, -pe, -evebitda, -divyield)
+```
+
+Checking outliers
+```{r}
+boxplot(SF1_21feat, las = 2)
+```
+
+Still some gigantic outliers, going to try winsorizing at .99 and .01 to see how much it helps. I know it will result in losing some information but I want the clustering to be informative and not completely driven by +40 or -40 SD outliers
+
+Winsorizing the 21 feature SF1 dataset
+
+```{r}
+winsorize <- function(x, p = 0.01) {
+  q <- quantile(x, c(p, 1-p))
+
+  case_when(x < q[1] ~ q[1], x > q[2] ~ q[2], TRUE ~ x)
+}
+
+SF1_21feat_winsor <- sapply(SF1_21feat, winsorize)
+boxplot(SF1_21feat_winsor, las=2)
+```
+Still plenty of outliers but the magnitude of the outliers is much better for a clustering representative of all the features
+
+Making the GMM for the 21 feature SF1 data 
+```{r}
+gmm_SF1_21_winsor <- Mclust(SF1_21feat_winsor, G=1:20, verbose = T)
+```
+
+Peeking at it
+```{r}
+summary(gmm_SF1_21_winsor)
+```
+```{r}
+summary(gmm_SF1_21_winsor$uncertainty)
+```
+Heatmap of the clusters(rows) and mean of the observations in each cluster for each feature(columns)
+```{r}
+pheatmap(t(gmm_SF1_21_winsor$parameters$mean), cluster_rows = F)
+```
+Plotting the BIC for all models in the Mclust() call
+```{r}
+plot(gmm_SF1_21_winsor, what = "BIC")
+```
+Making an object to hold all the cluster assignments for each obsevation in SF1_24feat
+```{r}
+vec_of_GMMassignments <- as.vector(gmm_SF1_21_winsor$classification)
+SF1_21feat_w_GMMclas <- SF1_21feat %>% mutate(ticker = SF1_32feat_wLabels$ticker)
+SF1_21feat_w_GMMclas <- SF1_21feat_w_GMMclas %>% mutate(sector = SF1_tibble_w_tickersANDLabels$sector,
+      industry = SF1_tibble_w_tickersANDLabels$industry)
+SF1_21feat_w_GMMclas$cluster <- vec_of_GMMassignments 
+Tickers1561_w_GMMstuff <- SF1_21feat_w_GMMclas %>% select(ticker, sector, industry, cluster)
+```
+
+Looking more at the uncertainties for each observation, i.e. which are less certainly in their cluster
+```{r}
+uncerts <- gmm_SF1_21_winsor$uncertainty
+Tickers1561_w_GMMstuff$uncertainty <- uncerts
+ggplot(Tickers1561_w_GMMstuff, aes(x=cluster, y=uncertainty, group = cluster))+geom_boxplot()
+```
+
+Visualizing the sector and industry representation of each cluster
+```{r}
+just_sector_and_GMMclust <- Tickers1561_w_GMMstuff %>% select(sector, cluster)
+gmm_clust_sector_barchart <- just_sector_and_GMMclust %>% ggplot(aes(x=cluster, fill = sector))+
+  geom_bar() +
+  scale_fill_manual(values = sector_colors)
+gmm_clust_sector_barchart
+```
+
+```{r}
+#just_sector_and_GMMclust <- ungroup(just_sector_and_GMMclust)
+just_sector_and_GMMclust <- just_sector_and_GMMclust %>% group_by(cluster)
+just_sector_and_GMMclust %>% filter(cluster == 1) %>% dplyr::count(sector, sort = T)
+just_sector_and_GMMclust %>% filter(cluster == 2) %>% dplyr::count(sector, sort = T)
+just_sector_and_GMMclust %>% filter(cluster == 3) %>% dplyr::count(sector, sort = T)
+just_sector_and_GMMclust %>% filter(cluster == 4) %>% dplyr::count(sector, sort = T)
+just_sector_and_GMMclust %>% filter(cluster == 5) %>% dplyr::count(sector, sort = T)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

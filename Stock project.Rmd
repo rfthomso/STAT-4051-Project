@@ -1,0 +1,481 @@
+---
+title: "Stock projectttt"
+output: pdf_document
+date: "2026-07-29"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+
+library(tidyverse)
+### Get raw data in as data frames
+
+# SHARADAR_DAILY (valuation metrics)
+raw_DAILY <- read.csv("~/Desktop/SHARADAR_DAILY_3_10809cb7704a0782be3ca22e507971cc.csv")
+
+# SHARADAR_METRICS (statistics based on actual market/equity data)
+raw_METRICS <- read.csv("~/Desktop/SHARADAR_METRICS_a5c0f19b4a6d6a0eb7d8a2c89c55071b.csv")
+
+# SHARADAR_SEP (Equity price data)
+raw_SEP <- read.csv("~/Desktop/SHARADAR_SEP_2_f1b7d3c75f69bea6716145181fe035e0.csv")
+
+# SHARADAR_SF1 (Standardized financial statement data)
+raw_SF1 <- read.csv("~/Desktop/SHARADAR_SF1_3_f9b5c423610c7ae36b31c4b8129e694c.csv")
+
+# SHARADAR_SFP (Fund price data)
+raw_SFP <- read.csv("~/Desktop/SHARADAR_SFP_2_526c8897597cf32d798a2d45833e977e.csv")
+
+# SHARADAR_SP500 (S&P 500 constituency history)
+raw_SP500 <- read.csv("~/Desktop/SHARADAR_SP500_2_fc77b8024e67111bd709cacef0141836.csv")
+
+# SHARADAR_TICKERS (Company metadata)
+raw_TICKERS <- read.csv("~/Desktop/SHARADAR_TICKERS_2_7ef16c1ffc4112bb028c13f3e3743955.csv")
+
+```
+
+
+
+
+```{r}
+
+
+raw_DAILY   <- as_tibble(raw_DAILY)
+raw_METRICS <- as_tibble(raw_METRICS)
+raw_SEP     <- as_tibble(raw_SEP)
+raw_SF1     <- as_tibble(raw_SF1)
+raw_SFP     <- as_tibble(raw_SFP)
+raw_SP500   <- as_tibble(raw_SP500)
+raw_TICKERS <- as_tibble(raw_TICKERS)
+
+```
+
+
+
+
+```{r}
+{
+  library(tidyverse)
+
+  returns_tibble <- raw_SEP %>%
+    drop_na() %>%
+    filter(date >= min(date)) %>%
+    arrange(date, ticker) %>%
+    as_tibble() %>%
+    group_by(date)
+
+  num_tickers_per_date <- returns_tibble %>%
+    summarise(n_distinct(ticker))
+
+  length(unique(returns_tibble$date))
+
+  returns_tibble <- returns_tibble %>%
+    ungroup()
+
+  returns_tibble <- returns_tibble %>%
+    group_by(ticker) %>%
+    filter(n() == 2599)
+
+  length(unique(returns_tibble$ticker))
+
+  returns_tibble <- returns_tibble %>%
+    mutate(lag_adj_close = lag(closeadj)) %>%
+    drop_na()
+
+  returns_tibble <- returns_tibble %>%
+    mutate(log_return = log(closeadj / lag_adj_close))
+
+  returns_tibble <- returns_tibble %>%
+    select(date, ticker, log_return)
+
+  returns_tibble <- returns_tibble %>%
+    pivot_wider(id_cols = ticker,
+                names_from = date,
+                values_from = log_return)
+}
+```
+
+
+
+```{r}
+{
+  other_tibble <- raw_SF1 %>%
+    filter()
+
+  # Separate into the six reporting dimensions
+  other_tibble_ARQ <- other_tibble %>% filter(dimension == "ARQ")
+  other_tibble_ART <- other_tibble %>% filter(dimension == "ART")
+  other_tibble_ARY <- other_tibble %>% filter(dimension == "ARY")
+  other_tibble_MRQ <- other_tibble %>% filter(dimension == "MRQ")
+  other_tibble_MRT <- other_tibble %>% filter(dimension == "MRT")
+  other_tibble_MRY <- other_tibble %>% filter(dimension == "MRY")
+
+  # Compare overlap with returns_tibble
+  length(intersect(unique(returns_tibble$ticker), unique(other_tibble_ARQ$ticker)))
+  length(intersect(unique(returns_tibble$ticker), unique(other_tibble_ART$ticker)))
+  length(intersect(unique(returns_tibble$ticker), unique(other_tibble_ARY$ticker)))
+  length(intersect(unique(returns_tibble$ticker), unique(other_tibble_MRQ$ticker)))
+  length(intersect(unique(returns_tibble$ticker), unique(other_tibble_MRT$ticker)))
+  length(intersect(unique(returns_tibble$ticker), unique(other_tibble_MRY$ticker)))
+
+  rm(other_tibble_ARQ,
+     other_tibble_ART,
+     other_tibble_ARY,
+     other_tibble_MRQ,
+     other_tibble_MRY)
+
+  # Keep only tickers in returns_tibble
+  vector_of_returns_tibble_tickers <- as.vector(returns_tibble$ticker)
+
+  other_tibble_MRT <- other_tibble_MRT %>%
+    filter(ticker %in% vector_of_returns_tibble_tickers)
+
+  # Keep only the newest financial statement
+  other_tibble_MRT <- other_tibble_MRT %>%
+    group_by(ticker) %>%
+    filter(calendardate == max(calendardate))
+
+  # Keep only recent reports
+  other_tibble_MRT <- other_tibble_MRT %>%
+    filter(calendardate > "2024-12-30")
+
+  other_tibble_MRT <- other_tibble_MRT %>%
+    drop_na() %>%
+    ungroup()
+
+  # Create financial ratios
+  other_tibble_MRT <- other_tibble_MRT %>%
+    mutate(
+      rel_assetsc       = assetsc/assetsavg,
+      rel_debtc         = debtc/debt,
+      rel_inventory     = inventory/assets,
+      rel_investments   = investments/assets,
+      rel_investmentsc  = investmentsc/investments,
+      rel_ncfo          = ncfo/ncf,
+      rel_payables      = payables/liabilities,
+      rel_ppnenett      = ppnenet/assets,
+      rel_receivables   = receivables/assets,
+      rel_retearn       = retearn/equity,
+      rel_rnd           = rnd/revenue,
+      rel_sgna          = sgna/revenue,
+      rel_tangibles     = tangibles/assets
+    )
+
+  # Keep only selected variables
+  other_tibble_MRT <- other_tibble_MRT %>%
+    select(
+      ticker,
+      assetsavg,
+      rel_assetsc,
+      assetturnover,
+      bvps,
+      capex,
+      cashnequsd,
+      currentratio,
+      de,
+      rel_debtc,
+      divyield,
+      ebitdamargin,
+      evebitda,
+      grossmargin,
+      rel_inventory,
+      rel_investments,
+      rel_investmentsc,
+      marketcap,
+      rel_ncfo,
+      netmargin,
+      rel_payables,
+      payoutratio,
+      pb,
+      pe,
+      rel_ppnenett,
+      ps,
+      rel_receivables,
+      rel_retearn,
+      rel_rnd,
+      roa,
+      roe,
+      roic,
+      rel_sgna,
+      rel_tangibles,
+      cor,
+      fcfps
+    )
+
+  tickers_temp_home <- as.vector(other_tibble_MRT$ticker)
+
+  all.equal(tickers_temp_home, other_tibble_MRT$ticker)
+
+  other_tibble_MRT <- other_tibble_MRT %>%
+    select(-ticker)
+
+  # Standardize
+  scaled_other_tibble_MRT <- scale(other_tibble_MRT)
+
+  scaled_other_tibble_MRT <- as_tibble(scaled_other_tibble_MRT)
+
+  SF1_tibble <- scaled_other_tibble_MRT %>%
+    mutate(ticker = tickers_temp_home)
+
+  unscaled_SF1_tibble <- other_tibble_MRT
+}
+```
+
+
+
+
+
+```{r}
+# Keep only companies that appear in both datasets
+final_tickers <- as.vector(SF1_tibble$ticker)
+
+returns_tibble <- returns_tibble %>%
+  filter(ticker %in% final_tickers)
+
+returns_tibble <- ungroup(returns_tibble)
+
+returns_tibble_w_tickers <- returns_tibble
+returns_tibble <- returns_tibble %>% select(-ticker)
+
+SF1_tibble_w_tickers <- SF1_tibble
+SF1_tibble <- SF1_tibble %>% select(-ticker)
+
+SF1_tibble <- SF1_tibble %>%
+  select(-rel_debtc,
+         -rel_investmentsc,
+         -rel_ncfo)
+
+SF1_tibble_w_tickers <- SF1_tibble_w_tickers %>%
+  select(-rel_debtc,
+         -rel_investmentsc,
+         -rel_ncfo)
+
+unscaled_SF1_tibble <- unscaled_SF1_tibble %>%
+  select(-rel_debtc,
+         -rel_investmentsc,
+         -rel_ncfo)
+```
+
+
+
+
+
+```{r}
+The11_returns_tbl <- raw_SEP %>%
+  filter(ticker %in% c(
+    "AAPL","GOOGL","BLK","AXP","BAC",
+    "CI","JNJ","MDT","BA","MMM","FDX"
+  )) %>%
+  select(ticker, date, closeadj) %>%
+  group_by(date) %>%
+  filter(n_distinct(ticker) == 11) %>%     # Keep only dates with all 11 companies
+  ungroup() %>%
+  group_by(ticker) %>%
+  arrange(date, .by_group = TRUE) %>%
+  mutate(log_return = log(closeadj / lag(closeadj))) %>%
+  drop_na() %>%
+  select(ticker, date, log_return) %>%
+  pivot_wider(
+    id_cols = ticker,
+    names_from = date,
+    values_from = log_return
+  )
+ 
+```
+
+```{r}
+The11_SF1 <- raw_SF1 %>%
+  filter(
+    ticker %in% c(
+      "AAPL","GOOGL","BLK","AXP","BAC",
+      "CI","JNJ","MDT","BA","MMM","FDX"
+    ),
+    dimension == "MRT"
+  ) %>%
+  group_by(ticker) %>%
+  filter(calendardate == max(calendardate)) %>%
+  ungroup()
+```
+
+
+```{r}
+library(tidyverse)
+
+# Define target tickers
+target_tickers <- c("AAPL", "GOOGL", "BLK", "AXP", "BAC", 
+                    "CI", "JNJ", "MDT", "BA", "MMM", "FDX")
+
+# ==============================================================================
+# 1. PROCESS DAILY RETURNS (SEP) - Filtered to 11 stocks
+# ==============================================================================
+returns_clean <- raw_SEP %>%
+  filter(ticker %in% target_tickers) %>%  # <--- FILTER ADDED HERE
+  select(ticker, date, closeadj) %>%
+  mutate(date = as.Date(date)) %>%
+  group_by(ticker) %>%
+  arrange(date, .by_group = TRUE) %>%
+  mutate(
+    lag_adj_close = lag(closeadj),
+    log_return    = log(closeadj / lag_adj_close)
+  ) %>%
+  ungroup() %>%
+  drop_na(log_return) %>%
+  select(ticker, date, log_return)
+
+# Pivot returns into Wide Matrix Format
+returns_wide <- returns_clean %>%
+  pivot_wider(
+    id_cols     = ticker,
+    names_from  = date,
+    values_from = log_return
+  ) %>%
+  mutate(across(-ticker, ~ replace_na(., 0)))
+
+# ==============================================================================
+# 2. PROCESS FINANCIAL STATEMENT METRICS (SF1) - Filtered to 11 stocks
+# ==============================================================================
+sf1_mrt <- raw_SF1 %>%
+  filter(
+    dimension == "MRT",
+    ticker %in% target_tickers            # <--- FILTER ADDED HERE
+  ) %>%
+  mutate(calendardate = as.Date(calendardate)) %>%
+  group_by(ticker) %>%
+  filter(calendardate == max(calendardate)) %>%
+  ungroup()
+
+# Compute Ratios safely
+sf1_ratios <- sf1_mrt %>%
+  transmute(
+    ticker,
+    assetsavg,
+    rel_assetsc     = if_else(assetsavg == 0 | is.na(assetsavg), 0, assetsc / assetsavg),
+    assetturnover   = replace_na(assetturnover, 0),
+    bvps            = replace_na(bvps, 0),
+    capex           = replace_na(capex, 0),
+    cashnequsd      = replace_na(cashnequsd, 0),
+    currentratio    = replace_na(currentratio, 0),
+    de              = replace_na(de, 0),
+    divyield        = replace_na(divyield, 0),
+    ebitdamargin    = replace_na(ebitdamargin, 0),
+    evebitda        = replace_na(evebitda, 0),
+    grossmargin     = replace_na(grossmargin, 0),
+    rel_inventory   = if_else(assets == 0 | is.na(assets), 0, replace_na(inventory, 0) / assets),
+    rel_investments = if_else(assets == 0 | is.na(assets), 0, replace_na(investments, 0) / assets),
+    marketcap       = replace_na(marketcap, 0),
+    netmargin       = replace_na(netmargin, 0),
+    rel_payables    = if_else(liabilities == 0 | is.na(liabilities), 0, replace_na(payables, 0) / liabilities),
+    payoutratio     = replace_na(payoutratio, 0),
+    pb              = replace_na(pb, 0),
+    pe              = replace_na(pe, 0),
+    rel_ppnenett    = if_else(assets == 0 | is.na(assets), 0, replace_na(ppnenet, 0) / assets),
+    ps              = replace_na(ps, 0),
+    rel_receivables = if_else(assets == 0 | is.na(assets), 0, replace_na(receivables, 0) / assets),
+    rel_retearn     = if_else(equity == 0 | is.na(equity), 0, replace_na(retearn, 0) / equity),
+    rel_rnd         = if_else(revenue == 0 | is.na(revenue), 0, replace_na(rnd, 0) / revenue),
+    roa             = replace_na(roa, 0),
+    roe             = replace_na(roe, 0),
+    roic            = replace_na(roic, 0),
+    rel_sgna        = if_else(revenue == 0 | is.na(revenue), 0, replace_na(sgna, 0) / revenue),
+    rel_tangibles   = if_else(assets == 0 | is.na(assets), 0, replace_na(tangibles, 0) / assets),
+    cor             = replace_na(cor, 0),
+    fcfps           = replace_na(fcfps, 0)
+  )
+
+# ==============================================================================
+# 3. ALIGN TICKERS & BUILD FINAL MATRICES
+# ==============================================================================
+common_tickers <- intersect(returns_wide$ticker, sf1_ratios$ticker)
+
+returns_aligned <- returns_wide %>%
+  filter(ticker %in% common_tickers) %>%
+  arrange(ticker)
+
+sf1_aligned <- sf1_ratios %>%
+  filter(ticker %in% common_tickers) %>%
+  arrange(ticker)
+
+# --- Matrix 1: Scaled Financial Ratios (11 Rows) ---
+sf1_numeric <- sf1_aligned %>% select(-ticker)
+sf1_scaled  <- scale(sf1_numeric)
+rownames(sf1_scaled) <- sf1_aligned$ticker
+
+# --- Matrix 2: Log Returns (11 Rows) ---
+returns_numeric <- returns_aligned %>% select(-ticker)
+returns_matrix  <- as.matrix(returns_numeric)
+rownames(returns_matrix) <- returns_aligned$ticker
+   
+```
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+# Load psych for robust Factor Analysis
+if(!require(psych)) install.packages("psych")
+library(psych)
+
+# ==============================================================================
+# CHUNK 8: MODELS FOR THE 11 STOCKS
+# Dataset: sf1_scaled (11 Tickers in rownames, standardized metrics in columns)
+# ==============================================================================
+
+# 1. PRINCIPAL COMPONENT ANALYSIS (PCA)
+sf1_variance <- apply(sf1_numeric, 2, var, na.rm = TRUE)
+sf1_valid    <- sf1_numeric[, sf1_variance > 0 & !is.na(sf1_variance)]
+
+sf1_scaled <- scale(sf1_valid)
+sf1_scaled[!is.finite(sf1_scaled)] <- 0
+rownames(sf1_scaled) <- sf1_aligned$ticker
+
+pca_result <- prcomp(sf1_scaled, center = FALSE, scale. = FALSE)
+
+
+# 2. FACTOR ANALYSIS (FA - 2 Factors using Principal Axis / MinRes)
+# 'psych::fa' handles near-singular matrices where base 'factanal' fails
+fa_result <- fa(sf1_scaled, nfactors = 2, rotate = "varimax", fm = "minres")
+
+
+# 3. HIERARCHICAL CLUSTERING (Ward's Method)
+dist_matrix   <- dist(sf1_scaled, method = "euclidean")
+hclust_result <- hclust(dist_matrix, method = "ward.D2")
+
+
+# 4. K-MEANS CLUSTERING (K = 3)
+set.seed(42)
+kmeans_result <- kmeans(sf1_scaled, centers = 3, nstart = 25)
+
+```
+
+
+
+
+
+```{r}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```
